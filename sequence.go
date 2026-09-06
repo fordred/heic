@@ -226,12 +226,7 @@ func parseHvcC(b []byte) (nalLenSize int, params [][]byte, ok bool) {
 	return nalLenSize, params, true
 }
 
-// parseStsz reads the sample size table. The sample count is a 32-bit value
-// taken directly from the file, so allocations derived from it are bounded:
-// per-entry sizes must be present in the box payload, and a uniform table
-// still implies one byte of media data per sample, so its count cannot
-// exceed the input size. Without these caps, a tiny forged stsz box forces
-// a multi-gigabyte allocation.
+// parseStsz caps the count by the bytes present so forged counts can't force a huge allocation.
 func parseStsz(p []byte, maxSamples int) []int64 {
 	if len(p) < 12 {
 		return nil
@@ -241,11 +236,9 @@ func parseStsz(p []byte, maxSamples int) []int64 {
 	n := int(binary.BigEndian.Uint32(p[8:12]))
 
 	if uniform != 0 {
-		if n > maxSamples {
-			n = maxSamples
-		}
-	} else if n > (len(p)-12)/4 {
-		n = (len(p) - 12) / 4
+		n = min(n, maxSamples)
+	} else {
+		n = min(n, (len(p)-12)/4)
 	}
 
 	out := make([]int64, n)
@@ -274,10 +267,7 @@ func parseOffsets(p []byte, sz int) []int64 {
 	}
 
 	n := int(binary.BigEndian.Uint32(p[4:8]))
-	if n > (len(p)-8)/sz {
-		// Chunk offsets must be present in the box payload.
-		n = (len(p) - 8) / sz
-	}
+	n = min(n, (len(p)-8)/sz)
 
 	out := make([]int64, 0, n)
 	off := 8
@@ -303,10 +293,7 @@ func parseStsc(p []byte) []int {
 	}
 
 	n := int(binary.BigEndian.Uint32(p[4:8]))
-	if n > (len(p)-8)/12 {
-		// Entries must be present in the box payload.
-		n = (len(p) - 8) / 12
-	}
+	n = min(n, (len(p)-8)/12)
 
 	out := make([]int, 0, n*2)
 	off := 8
@@ -323,19 +310,14 @@ func parseStsc(p []byte) []int {
 	return out
 }
 
-// parseStts reads the sample-to-decode-time deltas. The entry count is
-// bounded by the box payload and the expanded total (sum of per-entry
-// counts) by the input size, so a forged entry count cannot expand into a
-// huge slice.
+// parseStts caps the entry count by the box payload and the expanded total by maxSamples.
 func parseStts(p []byte, maxSamples int) []uint32 {
 	if len(p) < 8 {
 		return nil
 	}
 
 	n := int(binary.BigEndian.Uint32(p[4:8]))
-	if n > (len(p)-8)/8 {
-		n = (len(p) - 8) / 8
-	}
+	n = min(n, (len(p)-8)/8)
 
 	var out []uint32
 	off := 8

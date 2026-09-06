@@ -16,10 +16,7 @@ func box(typ string, payload []byte) []byte {
 	return b
 }
 
-// forgedSequenceContainer builds a minimal HEIF sequence container whose stsz
-// box claims 2^29 samples. Pre-fix, heic.DecodeConfig allocated ~4 GiB for
-// this 124-byte file before failing; the parsers must now bound allocations
-// by what the input can actually back.
+// forgedSequenceContainer builds a 124-byte file whose stsz box claims 2^29 samples.
 func forgedSequenceContainer() []byte {
 	ftyp := make([]byte, 16)
 	binary.BigEndian.PutUint32(ftyp[:4], 16)
@@ -37,7 +34,7 @@ func forgedSequenceContainer() []byte {
 }
 
 func TestParseStszBoundsForgedCounts(t *testing.T) {
-	// Per-entry sizes: count must be backed by bytes in the box payload.
+	// Per-entry variant: count capped by payload bytes.
 	p := make([]byte, 12)
 	binary.BigEndian.PutUint32(p[8:12], 1<<30)
 	if got := parseStsz(p, 1<<30); len(got) != 0 {
@@ -50,7 +47,7 @@ func TestParseStszBoundsForgedCounts(t *testing.T) {
 		t.Fatalf("2 entries present: got %d, want 2", len(got))
 	}
 
-	// Uniform table: count capped by maxSamples, not the forged value.
+	// Uniform variant: count capped by maxSamples.
 	p = make([]byte, 12)
 	binary.BigEndian.PutUint32(p[4:8], 100) // sample_size
 	binary.BigEndian.PutUint32(p[8:12], 1<<30)
@@ -92,7 +89,7 @@ func TestParseStscBoundsForgedCounts(t *testing.T) {
 }
 
 func TestParseSttsBoundsForgedCounts(t *testing.T) {
-	// One entry claiming 2^30 samples: expanded total capped by maxSamples.
+	// Expanded total capped by maxSamples.
 	p := make([]byte, 16)
 	binary.BigEndian.PutUint32(p[4:8], 1)      // one entry
 	binary.BigEndian.PutUint32(p[8:12], 1<<30) // cnt
@@ -101,7 +98,7 @@ func TestParseSttsBoundsForgedCounts(t *testing.T) {
 		t.Fatalf("forged cnt: got %d durations, want 64", len(got))
 	}
 
-	// Entry count itself capped by box payload.
+	// Entry count capped by payload bytes.
 	p = make([]byte, 8)
 	binary.BigEndian.PutUint32(p[4:8], 1<<30)
 	if got := parseStts(p, 1<<30); len(got) != 0 {
